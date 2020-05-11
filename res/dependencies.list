@@ -1,0 +1,5 @@
+#Dependency list for "isdown"
+dnsutils
+~ping
+~ping6
+curl

@@ -1,0 +1,224 @@
+#!/bin/bash
+#type nping &>/dev/null || printf "nping not installed \n please install nping first" && exit 1
+exit_script() {
+	exit 0
+	trap - SIGINT SIGTERM # clear the trap
+	kill -- -$$ # Sends SIGTERM to child/sub processes
+}
+trap exit_script SIGINT SIGTERM
+ip=$2
+if [[ $1 == "-i" ]]; then
+	set -- "${@:2}" "$ip" "${@:2}"
+	toresolv="no"
+fi
+rx='([1-9]?[0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+ORANGE='\033[0;33m'
+NC='\033[0m'
+printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' -
+printf "\n"
+#rm -rf ~/.ips/*
+> ~/.ips/fail.temp
+> ~/.ips/resp.temp
+if [[ ! -d ~/.ips/ ]]; then
+	mkdir ~/.ips
+	if [[ ! -d ~/.ips/ ]]; then
+		printf "make sure you have the right to make a folder at ~/ \n" && exit 1
+	fi
+fi
+if [[ -z $1 ]]; then
+	printf "no argument specified. \nuse it like: \n$0 example.com \n" && exit 1
+fi
+
+
+
+
+
+if [[ -z $toresolv ]]; then
+
+	nslookup $1 | sed -n -e 's/^.*Address: //p' > ~/.ips/ip.ips
+
+	while read p; do
+		## IF DOMAIN NAME
+		#TRACKING IPV4 PING RESPONSES
+		if [[ $p =~ ^$rx\.$rx\.$rx\.$rx$ ]]; then
+			curip="IPv4"
+			if ping -c1 -w3 $p >/dev/null 2>&1
+			then
+				(test=`echo "Host Repied! - $1 - $p - $curip" >> ~/.ips/resp.temp &` &)
+			else
+				(test=`echo "Ping Fail - $p - $curip" >> ~/.ips/fail.temp &` &)
+			fi
+
+
+
+
+
+
+      #TRACKING IPV6 PING RESPONSES
+else
+	curip="IPv6"
+	if ping6 -c1 -w3 $p >/dev/null 2>&1
+	then
+		`echo "Host Repied! - $1 - $p - IPV6" >> ~/.ips/resp.temp`
+	else
+		`echo "Ping Fail - $p - $curip" >> ~/.ips/fail.temp`
+	fi
+
+		fi
+
+
+
+	done <~/.ips/ip.ips
+
+
+  ## IF PLAIN IP
+  #TRACKING IPV4 PING RESPONSE
+else
+	p=$1
+
+
+	if [[ $p =~ ^$rx\.$rx\.$rx\.$rx$ ]]; then
+		curip="IPv4"
+		if ping -c1 -w3 $p >/dev/null 2>&1
+		then
+			(test=`echo "Host Repied! - $p - $curip" >> ~/.ips/resp.temp &` &)
+		else
+			(test=`echo "Ping Fail - $p - $curip" >> ~/.ips/fail.temp &` &)
+		fi
+
+
+
+
+
+    #TRACKING IPV6 PING RESPONSES
+else
+	curip="IPv6"
+	if ping6 -c1 -w3 $p >/dev/null 2>&1
+	then
+		`echo "Host Repied! - $p - IPV6" >> ~/.ips/resp.temp`
+	else
+		`echo "Ping Fail - $p - $curip" >> ~/.ips/~/.ips/fail.temp`
+	fi
+	fi
+
+fi
+
+
+
+
+
+
+lineok=`wc -l < ~/.ips/resp.temp`
+linefail=`wc -l < ~/.ips/fail.temp`
+
+##ECHO RESP
+if [[ ! $lineok == "0" ]]; then
+	IFS='
+	'
+	for i in $(<~/.ips/resp.temp)
+	do echo "$i" &&  sleep 0.1
+	done
+fi
+
+##ECHO FAILED
+if [[ ! $linefail == "0" ]]; then
+	IFS='
+	'
+	for i in $(<~/.ips/fail.temp)
+	do echo "$i" &&  sleep 0.1
+	done
+fi
+
+#CHECK IF DNS FOUND NO ADDRESS
+if [[ -z $toresolv ]]; then
+	resolved=`wc -l < ~/.ips/ip.ips`
+
+	if [[ "$resolved" == "0" ]]; then
+		printf "${ORANGE}Dns could not resolv this address${NC}\n\n"
+	fi
+fi
+
+#track score
+if [[ `wc -l < ~/.ips/resp.temp` -gt "0"  ]]; then
+	percent2="100"
+fi
+lineok=`wc -l < ~/.ips/resp.temp`
+linefail=`wc -l < ~/.ips/fail.temp`
+linetotal=$(($lineok+$linefail))
+if [[ ! "$lineok" == "0" ]] || [[ ! "$linetotal" == "0" ]]; then
+	test=$(($lineok / $linetotal))
+fi
+percent=$((test * 100))
+
+if [[ ! -z $toresolv ]]; then
+	if [[ $1 =~ ^$rx\.$rx\.$rx\.$rx$ ]]; then
+		response=$(curl --write-out %{http_code} -L --silent --output /dev/null $1)
+	else
+		response=$(curl --write-out %{http_code} -L --silent --output /dev/null -g -6 "http://[$1]:80")
+	fi
+else
+	response=$(curl --write-out %{http_code} -L --silent --output /dev/null $1)
+fi
+
+if [[ $response == 000 ]]; then
+	response="${ORANGE}N/A${NC}"
+fi
+printf "\nResponse code: $response \n"
+if [[ $response == "200" ]]; then
+	overpercent=$(($percent2 + "50"))
+else
+	overpercent=$(($percent2 - "50"))
+fi
+if [ "$overpercent" -gt "99" ]; then
+	overpercent="100"
+elif [[ $overpercent -lt "0" ]]; then
+	overpercent="0"
+fi
+
+if [[ -z $percent2 ]]; then
+	percent2="0"
+fi
+port1=`(echo > /dev/tcp/$1/80) >/dev/null 2>&1 && echo "80" || echo ""`
+port2=`(echo > /dev/tcp/$1/443) >/dev/null 2>&1 && echo "443" || echo ""`
+ports=$port1$(printf " ")$port2
+echo "open ports: $ports"
+
+
+##PRINT SCORE
+printf "\n"
+printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' -
+printf "\nPing score: $percent2"
+printf "\nOverall score: $overpercent"
+
+
+##PRINT STATUS
+
+
+
+if [[ "$overpercent" -gt "99" ]]; then
+	printf "\n${GREEN}$1 is up!${NC}\n"
+	printf "\n"
+elif [[ "$(($percent2 + $overpercent))" == "0" ]]; then
+	printf "\n${RED}$1 seems down!${NC}\n\n"
+else
+	if [[ $response == 200 ]]; then
+		printf "\n${ORANGE}Unsure, $1 is probably ${NC}${GREEN}up.${NC}\n\n"
+	else
+		printf "\n${ORANGE}Unsure, $1 looks ${NC}${RED}down.${NC}\n\n"
+	fi
+fi
+
+printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' -
+
+if [[ ! "$percent" == "100" ]]; then
+	printf "\nNote: the website might not be down even if one or more server(s) are not responding."
+	printf '\n\n%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' -
+fi
+printf "\n"
+if [[ ! "$response" == "200" ]]; then
+	printf "\nNote: the website might not be down even if the status code isn't 200. The website might be blocking CUrl's requests."
+	printf "\n"
+	printf '\n%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' -
+fi
